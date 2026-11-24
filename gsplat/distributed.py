@@ -3,7 +3,6 @@ from typing import Any, Callable, List, Optional, Union
 
 import torch
 import torch.distributed as dist
-import torch.distributed.nn.functional as distF
 from torch import Tensor
 
 
@@ -151,6 +150,7 @@ def all_gather_tensor_list(world_size: int, tensor_list: List[Tensor]) -> List[T
 
     if data.requires_grad:
         # differentiable gather
+        from torch.distributed.nn import functional as distF
         collected = distF.all_gather(data)
     else:
         # non-differentiable gather
@@ -242,6 +242,7 @@ def all_to_all_tensor_list(
     splits = [s.item() if isinstance(s, Tensor) else s for s in splits]
     if data.requires_grad:
         # differentiable all_to_all
+        from torch.distributed.nn import functional as distF
         distF.all_to_all(collected, data.split(splits, dim=0))
     else:
         # non-differentiable all_to_all
