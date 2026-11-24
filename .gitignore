@@ -126,3 +126,4 @@ results
 
 !examples/benchmarks/compression/results/
 test_gsplat.py
+nohup.out
