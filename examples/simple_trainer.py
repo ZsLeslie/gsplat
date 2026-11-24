@@ -59,6 +59,8 @@ class Config:
     result_dir: str = "results/garden"
     # Every N images there is a test image
     test_every: int = 8
+    # Train on all images and skip validation
+    train_all: bool = False
     # Random crop size for training  (experimental)
     patch_size: Optional[int] = None
     # A global scaler that applies to the scene size related parameters
@@ -339,11 +341,11 @@ class Runner:
         )
         self.trainset = Dataset(
             self.parser,
-            split="train",
+            split="all" if cfg.train_all else "train",
             patch_size=cfg.patch_size,
             load_depths=cfg.depth_loss,
         )
-        self.valset = Dataset(self.parser, split="val")
+        self.valset = None if cfg.train_all else Dataset(self.parser, split="val")
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
         print("Scene scale:", self.scene_scale)
 
@@ -453,21 +455,24 @@ class Runner:
                 ),
             ]
 
-        # Losses & Metrics.
-        self.ssim = StructuralSimilarityIndexMeasure(data_range=1.0).to(self.device)
-        self.psnr = PeakSignalNoiseRatio(data_range=1.0).to(self.device)
+        # Validation metrics.
+        if self.valset is not None:
+            self.ssim = StructuralSimilarityIndexMeasure(data_range=1.0).to(
+                self.device
+            )
+            self.psnr = PeakSignalNoiseRatio(data_range=1.0).to(self.device)
 
-        if cfg.lpips_net == "alex":
-            self.lpips = LearnedPerceptualImagePatchSimilarity(
-                net_type="alex", normalize=True
-            ).to(self.device)
-        elif cfg.lpips_net == "vgg":
-            # The 3DGS official repo uses lpips vgg, which is equivalent with the following:
-            self.lpips = LearnedPerceptualImagePatchSimilarity(
-                net_type="vgg", normalize=False
-            ).to(self.device)
-        else:
-            raise ValueError(f"Unknown LPIPS network: {cfg.lpips_net}")
+            if cfg.lpips_net == "alex":
+                self.lpips = LearnedPerceptualImagePatchSimilarity(
+                    net_type="alex", normalize=True
+                ).to(self.device)
+            elif cfg.lpips_net == "vgg":
+                # Match the LPIPS configuration used by the official 3DGS implementation.
+                self.lpips = LearnedPerceptualImagePatchSimilarity(
+                    net_type="vgg", normalize=False
+                ).to(self.device)
+            else:
+                raise ValueError(f"Unknown LPIPS network: {cfg.lpips_net}")
 
         # Viewer
         if not self.cfg.disable_viewer:
@@ -905,6 +910,8 @@ class Runner:
     @torch.no_grad()
     def eval(self, step: int, stage: str = "val"):
         """Entry for evaluation."""
+        if self.valset is None:
+            return
         print("Running evaluation...")
         cfg = self.cfg
         device = self.device
@@ -998,11 +1005,16 @@ class Runner:
         """Entry for trajectory rendering."""
         if self.cfg.disable_video:
             return
+        camtoworlds_all = self.parser.camtoworlds
+        if len(camtoworlds_all) < 2:
+            return
+        if len(camtoworlds_all) >= 12:
+            camtoworlds_all = camtoworlds_all[5:-5]
+
         print("Running trajectory rendering...")
         cfg = self.cfg
         device = self.device
 
-        camtoworlds_all = self.parser.camtoworlds[5:-5]
         if cfg.render_traj_path == "interp":
             camtoworlds_all = generate_interpolated_path(
                 camtoworlds_all, 1

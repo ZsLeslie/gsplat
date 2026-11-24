@@ -19,6 +19,9 @@ Simply run the script under `examples/`:
         --data_dir data/360_v2/garden/ --data_factor 4 \
         --result_dir ./results/garden
 
+Add :code:`--train_all` to train on every image registered in COLMAP and skip
+validation. This option is also available in :code:`examples/simple_trainer_2dgs.py`.
+
 It also supports a browser based viewer for real-time rendering, powered by 
 `Viser <https://github.com/nerfstudio-project/viser>`_ and 
 `nerfview <https://github.com/hangg7/nerfview>`_.

@@ -50,6 +50,8 @@ class Config:
     result_dir: str = "results/garden"
     # Every N images there is a test image
     test_every: int = 8
+    # Train on all images and skip validation
+    train_all: bool = False
     # Random crop size for training  (experimental)
     patch_size: Optional[int] = None
     # A global scaler that applies to the scene size related parameters
@@ -282,11 +284,11 @@ class Runner:
         )
         self.trainset = Dataset(
             self.parser,
-            split="train",
+            split="all" if cfg.train_all else "train",
             patch_size=cfg.patch_size,
             load_depths=cfg.depth_loss,
         )
-        self.valset = Dataset(self.parser, split="val")
+        self.valset = None if cfg.train_all else Dataset(self.parser, split="val")
         self.scene_scale = self.parser.scene_scale * 1.1 * cfg.global_scale
         print("Scene scale:", self.scene_scale)
 
@@ -371,10 +373,11 @@ class Runner:
 
         # Losses & Metrics.
         self.ssim = StructuralSimilarityIndexMeasure(data_range=1.0).to(self.device)
-        self.psnr = PeakSignalNoiseRatio(data_range=1.0).to(self.device)
-        self.lpips = LearnedPerceptualImagePatchSimilarity(normalize=True).to(
-            self.device
-        )
+        if self.valset is not None:
+            self.psnr = PeakSignalNoiseRatio(data_range=1.0).to(self.device)
+            self.lpips = LearnedPerceptualImagePatchSimilarity(normalize=True).to(
+                self.device
+            )
 
         # Viewer
         if not self.cfg.disable_viewer:
@@ -750,6 +753,8 @@ class Runner:
     @torch.no_grad()
     def eval(self, step: int):
         """Entry for evaluation."""
+        if self.valset is None:
+            return
         print("Running evaluation...")
         cfg = self.cfg
         device = self.device
@@ -879,11 +884,16 @@ class Runner:
     @torch.no_grad()
     def render_traj(self, step: int):
         """Entry for trajectory rendering."""
+        camtoworlds = self.parser.camtoworlds
+        if len(camtoworlds) < 2:
+            return
+        if len(camtoworlds) >= 12:
+            camtoworlds = camtoworlds[5:-5]
+
         print("Running trajectory rendering...")
         cfg = self.cfg
         device = self.device
 
-        camtoworlds = self.parser.camtoworlds[5:-5]
         camtoworlds = generate_interpolated_path(camtoworlds, 1)  # [N, 3, 4]
         camtoworlds = np.concatenate(
             [
